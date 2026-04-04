@@ -16,7 +16,7 @@
             "flutterMode": "profile"
         },
         {
-            "name": "ImpressionVault (release mode)",
+            "name": "ImpressionVault (release mode)", 
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"
