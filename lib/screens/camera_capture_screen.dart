@@ -144,19 +144,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
     }
   }
 
-  String _cameraDiagnosticsText() {
-    final int cameraCount = AppRuntime.cameras.length;
-    final CameraDescription? selected = _cameraController?.description;
-    final String selectedName = selected?.name ?? 'none';
-    final String lens = selected?.lensDirection.name ?? 'n/a';
-    final String initState = _isInitializingCamera
-        ? 'initializing'
-        : _cameraController == null
-        ? 'not ready'
-        : 'ready';
-    return 'Detected: $cameraCount | Selected: $selectedName ($lens) | State: $initState';
-  }
-
   Future<void> _loadImages() async {
     final List<CustomerImageRecord> images =
         await AppDatabase.instance.listImagesForCustomer(widget.customerId);
@@ -379,14 +366,6 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              _cameraDiagnosticsText(),
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
