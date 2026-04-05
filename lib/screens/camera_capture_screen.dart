@@ -176,7 +176,8 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
       final XFile rawFile = await _cameraController!.takePicture();
 
       final Directory docsDir = await getApplicationDocumentsDirectory();
-      final Directory imageDir = Directory(p.join(docsDir.path, 'customer_images'));
+      final Directory imageDir =
+          Directory(p.join(docsDir.path, 'customer_images'));
       if (!imageDir.existsSync()) {
         await imageDir.create(recursive: true);
       }
@@ -212,20 +213,54 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
     }
   }
 
-  Future<void> _openViewer(CustomerImageRecord image) async {
-    final bool? shouldDelete = await Navigator.of(context).push<bool>(
+  Future<void> _openViewer(int initialIndex) async {
+    final bool? didChange = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
         builder: (_) => ImageViewerScreen(
-          imagePath: image.path,
+          images: List<CustomerImageRecord>.of(_images),
+          initialIndex: initialIndex,
+          customerId: widget.customerId,
         ),
       ),
     );
 
-    if (shouldDelete != true || image.id == null) {
+    if (didChange == true) {
+      await _loadImages();
+    }
+  }
+
+  Future<void> _deleteImage(CustomerImageRecord image) async {
+    final int imageNumber = _images.indexOf(image) + 1;
+    final int imageCount = _images.length;
+    final bool? shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Delete Image'),
+          content: Text(
+            'Are you sure you want to delete image $imageNumber of $imageCount?',
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true || !mounted) {
       return;
     }
 
-    await AppDatabase.instance.deleteImage(image.id!);
+    if (image.id != null) {
+      await AppDatabase.instance.deleteImage(image.id!);
+    }
     await AppDatabase.instance.touchCustomer(widget.customerId);
 
     final File imageFile = File(image.path);
@@ -305,63 +340,66 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
                 child: _isInitializingCamera
                     ? const Center(child: CircularProgressIndicator())
                     : _cameraController == null || _cameraInitFuture == null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: <Widget>[
-                              Text(
-                                _cameraErrorMessage ?? 'Camera unavailable',
-                                style: const TextStyle(color: Colors.white70),
-                                textAlign: TextAlign.center,
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  Text(
+                                    _cameraErrorMessage ?? 'Camera unavailable',
+                                    style:
+                                        const TextStyle(color: Colors.white70),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  OutlinedButton.icon(
+                                    onPressed: _initCamera,
+                                    icon: const Icon(Icons.refresh),
+                                    label: const Text('Retry Camera'),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 10),
-                              OutlinedButton.icon(
-                                onPressed: _initCamera,
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('Retry Camera'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : FutureBuilder<void>(
-                        future: _cameraInitFuture,
-                        builder:
-                            (BuildContext context, AsyncSnapshot<void> snapshot) {
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: <Widget>[
-                                    Text(
-                                      'Camera failed to start: ${snapshot.error}',
-                                      style: const TextStyle(color: Colors.white70),
-                                      textAlign: TextAlign.center,
+                            ),
+                          )
+                        : FutureBuilder<void>(
+                            future: _cameraInitFuture,
+                            builder: (BuildContext context,
+                                AsyncSnapshot<void> snapshot) {
+                              if (snapshot.hasError) {
+                                return Center(
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: <Widget>[
+                                        Text(
+                                          'Camera failed to start: ${snapshot.error}',
+                                          style: const TextStyle(
+                                              color: Colors.white70),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                        const SizedBox(height: 10),
+                                        OutlinedButton.icon(
+                                          onPressed: _initCamera,
+                                          icon: const Icon(Icons.refresh),
+                                          label: const Text('Retry Camera'),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 10),
-                                    OutlinedButton.icon(
-                                      onPressed: _initCamera,
-                                      icon: const Icon(Icons.refresh),
-                                      label: const Text('Retry Camera'),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          }
+                                  ),
+                                );
+                              }
 
-                          if (snapshot.connectionState != ConnectionState.done) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
-                          return CameraPreview(_cameraController!);
-                        },
-                      ),
+                              if (snapshot.connectionState !=
+                                  ConnectionState.done) {
+                                return const Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              }
+                              return CameraPreview(_cameraController!);
+                            },
+                          ),
               ),
             ),
           ),
@@ -417,24 +455,49 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen> {
   Widget _buildImageTile(CustomerImageRecord image, {required bool vertical}) {
     final File file = File(image.path);
     final bool exists = file.existsSync();
+    final int index = _images.indexOf(image);
 
-    return InkWell(
-      onTap: () => _openViewer(image),
-      child: Container(
-        width: vertical ? null : 120,
-        height: vertical ? 110 : 110,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.black12),
+    return Stack(
+      children: <Widget>[
+        InkWell(
+          onTap: () => _openViewer(index),
+          child: Container(
+            width: vertical ? null : 120,
+            height: vertical ? 110 : 110,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.black12),
+            ),
+            child: exists
+                ? Image.file(file, fit: BoxFit.cover)
+                : const ColoredBox(
+                    color: Colors.black12,
+                    child: Center(child: Icon(Icons.broken_image_outlined)),
+                  ),
+          ),
         ),
-        child: exists
-            ? Image.file(file, fit: BoxFit.cover)
-            : const ColoredBox(
-                color: Colors.black12,
-                child: Center(child: Icon(Icons.broken_image_outlined)),
+        Positioned(
+          top: 6,
+          left: 6,
+          child: Material(
+            color: Colors.black54,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () => _deleteImage(image),
+              child: const Padding(
+                padding: EdgeInsets.all(6),
+                child: Icon(
+                  Icons.close,
+                  size: 18,
+                  color: Colors.white,
+                ),
               ),
-      ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
